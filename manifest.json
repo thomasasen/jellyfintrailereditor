@@ -1,0 +1,11 @@
+[
+  {
+    "guid": "56e9d5a8-b42c-4eb7-9e8e-d09bd15a4f08",
+    "name": "Trailer Editor",
+    "description": "Edit YouTube trailers directly in the Jellyfin movie metadata editor.",
+    "overview": "Adds a YouTube trailer field to the existing metadata dialog. Saves through Jellyfin's native metadata pipeline; NFO output requires the NFO saver.",
+    "owner": "thomasasen",
+    "category": "Metadata",
+    "versions": []
+  }
+]

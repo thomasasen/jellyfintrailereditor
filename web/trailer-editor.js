@@ -1,0 +1,213 @@
+/* Jellyfin Trailer Editor: injected into the existing metadata dialog. */
+(function (root) {
+    'use strict';
+
+    const VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
+    const GUID = /[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}/i;
+
+    function canonicalYouTube(input) {
+        if (typeof input !== 'string' || !input.trim() || input.length > 2048) return null;
+        const value = input.trim();
+        if (value.toLowerCase().startsWith('plugin://plugin.video.youtube/')) {
+            const match = value.match(/[?&](?:video_id|videoid)=([A-Za-z0-9_-]{11})(?:[&#]|$)/i);
+            return match ? 'https://www.youtube.com/watch?v=' + match[1] : null;
+        }
+        let url;
+        try { url = new URL(value); } catch (_) { return null; }
+        if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) return null;
+        if (url.port && !['80', '443'].includes(url.port)) return null;
+        const host = url.hostname.toLowerCase();
+        const short = ['youtu.be', 'www.youtu.be'].includes(host);
+        const normal = ['youtube.com', 'www.youtube.com', 'm.youtube.com',
+            'music.youtube.com', 'youtube-nocookie.com', 'www.youtube-nocookie.com'].includes(host);
+        if (!short && !normal) return null;
+        const parts = url.pathname.split('/').filter(Boolean);
+        let id = null;
+        if (short && parts.length === 1) id = parts[0];
+        else if (normal && parts.length === 1 && parts[0] === 'watch') id = url.searchParams.get('v');
+        else if (normal && parts.length === 2 && ['shorts', 'embed', 'live', 'v'].includes(parts[0])) id = parts[1];
+        return id && VIDEO_ID.test(id) ? 'https://www.youtube.com/watch?v=' + id : null;
+    }
+
+    function parseList(text) {
+        const result = [];
+        const seen = new Set();
+        for (const raw of text.split(/\r?\n/).map(s => s.trim()).filter(Boolean)) {
+            const url = canonicalYouTube(raw);
+            if (!url) throw new Error('Ungültige YouTube-URL: ' + raw.slice(0, 100));
+            if (!seen.has(url)) { seen.add(url); result.push(url); }
+        }
+        return result;
+    }
+
+    if (typeof module !== 'undefined' && module.exports) module.exports = { canonicalYouTube, parseList };
+    if (typeof document === 'undefined' || typeof MutationObserver === 'undefined') return;
+    if (root.__jellyfinTrailerEditorLoaded) return;
+    root.__jellyfinTrailerEditorLoaded = true;
+
+    const scriptUrl = document.currentScript && document.currentScript.src;
+    if (!scriptUrl) return;
+    const apiRoot = new URL('./', scriptUrl);
+    const mounted = new WeakSet();
+    let lastEditorId = null;
+
+    // Jellyfin's metadata editor keeps currentItem private to its JS module. Capture
+    // the editor-info request, falling back to the item ID in the page URL.
+    function inspectRequest(url) {
+        const match = String(url).match(/\/Items\/([0-9a-f-]{32,36})\/MetadataEditor(?:[?#]|$)/i);
+        if (match && GUID.test(match[1])) lastEditorId = match[1];
+    }
+
+    const nativeFetch = root.fetch;
+    if (typeof nativeFetch === 'function') {
+        root.fetch = function (input, init) {
+            inspectRequest(typeof input === 'string' ? input : input && input.url);
+            return nativeFetch.apply(this, arguments);
+        };
+    }
+    if (root.XMLHttpRequest && root.XMLHttpRequest.prototype) {
+        const nativeOpen = root.XMLHttpRequest.prototype.open;
+        root.XMLHttpRequest.prototype.open = function (method, url) {
+            inspectRequest(url);
+            return nativeOpen.apply(this, arguments);
+        };
+    }
+
+    function routeId() {
+        const href = root.location && root.location.href || '';
+        const match = href.match(/[?&]id=([0-9a-f-]{32,36})(?:[&#]|$)/i);
+        return match ? match[1] : null;
+    }
+
+    function token() {
+        const api = root.ApiClient || (root.ServerConnections
+            && root.ServerConnections.currentApiClient && root.ServerConnections.currentApiClient());
+        return api && typeof api.accessToken === 'function' ? api.accessToken() : null;
+    }
+
+    async function request(path, method, body) {
+        const auth = token();
+        const headers = { Accept: 'application/json' };
+        if (auth) headers['X-Emby-Token'] = auth;
+        if (body !== undefined) headers['Content-Type'] = 'application/json';
+        const response = await nativeFetch.call(root, new URL(path, apiRoot).toString(), {
+            method, headers, credentials: 'same-origin', body: body === undefined ? undefined : JSON.stringify(body)
+        });
+        if (!response.ok) {
+            let problem = '';
+            try {
+                const data = await response.json();
+                problem = data.message || data.detail || data.title || '';
+            } catch (_) { /* no JSON response */ }
+            throw new Error(problem || 'HTTP ' + response.status);
+        }
+        return response.json();
+    }
+
+    function message(el, value, error) {
+        el.textContent = value;
+        el.style.color = error ? '#ff7777' : '';
+    }
+
+    async function mount(form, itemId) {
+        if (mounted.has(form)) return;
+        mounted.add(form);
+
+        const footer = form.querySelector('.formDialogFooter');
+        if (!footer) return;
+        const field = document.createElement('div');
+        field.className = 'inputContainer jte-field';
+        field.style.marginBottom = '1.5em';
+
+        const label = document.createElement('label');
+        label.className = 'inputLabel inputLabelUnfocused';
+        label.htmlFor = 'jteTrailers';
+        label.textContent = 'YouTube-Trailer';
+        const textarea = document.createElement('textarea');
+        textarea.id = 'jteTrailers';
+        textarea.className = 'emby-input';
+        textarea.rows = 3;
+        textarea.disabled = true;
+        textarea.placeholder = 'https://www.youtube.com/watch?v=...';
+        textarea.style.width = '100%';
+        textarea.style.boxSizing = 'border-box';
+        textarea.style.resize = 'vertical';
+
+        const help = document.createElement('div');
+        help.className = 'fieldDescription';
+        help.textContent = 'Eine YouTube-URL pro Zeile. Leeren, um YouTube-Trailer zu entfernen. Andere Trailer bleiben erhalten.';
+        const status = document.createElement('div');
+        status.className = 'fieldDescription';
+        status.setAttribute('role', 'status');
+        status.setAttribute('aria-live', 'polite');
+        field.append(label, textarea, help, status);
+        footer.before(field);
+
+        let original = [];
+        let ready = false;
+        try {
+            const response = await request('Items/' + itemId, 'GET');
+            original = response.urls || response.Urls || [];
+            textarea.value = original.join('\n');
+            textarea.disabled = false;
+            ready = true;
+            message(status, original.length + ' Trailer geladen', false);
+        } catch (error) {
+            message(status, 'Trailer konnten nicht geladen werden: ' + error.message, true);
+        }
+
+        // Runs BEFORE Jellyfin's native onSubmit. Save trailers first and only
+        // dispatch to the native handler after our write was acknowledged.
+        // Jellyfin's native item-update endpoint does not update RemoteTrailers.
+        let passThrough = false;
+        let busy = false;
+        form.addEventListener('submit', async function (event) {
+            if (passThrough) {
+                passThrough = false;
+                return;
+            }
+            if (!ready) return;
+            let proposed;
+            try {
+                proposed = parseList(textarea.value);
+            } catch (error) {
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                message(status, error.message, true);
+                textarea.focus();
+                return;
+            }
+            if (JSON.stringify(proposed) === JSON.stringify(original)) return;
+
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            if (busy) return;
+            busy = true;
+            textarea.disabled = true;
+            message(status, 'Trailer werden gespeichert …', false);
+            try {
+                await request('Items/' + itemId, 'PUT', { urls: proposed });
+                original = proposed;
+                message(status, 'Trailer gespeichert', false);
+                passThrough = true;
+                form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+            } catch (error) {
+                message(status, 'Speichern fehlgeschlagen: ' + error.message, true);
+            } finally {
+                busy = false;
+                textarea.disabled = false;
+            }
+        }, true);
+    }
+
+    function scan() {
+        for (const form of document.querySelectorAll('form.editItemMetadataForm')) {
+            if (mounted.has(form)) continue;
+            const id = lastEditorId || routeId();
+            if (id) mount(form, id);
+        }
+    }
+    const observer = new MutationObserver(scan);
+    observer.observe(document.documentElement, { childList: true, subtree: true });
+    scan();
+})(globalThis);
