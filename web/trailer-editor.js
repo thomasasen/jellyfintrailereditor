@@ -139,13 +139,31 @@
         return api && typeof api.accessToken === 'function' ? api.accessToken() : null;
     }
 
+    // Jellyfin 10.11+ can disable the obsolete X-Emby-* authentication headers.
+    // Jellyfin 12 does this by default. Use Authorization: MediaBrowser instead.
+    function modernAuthorization() {
+        const existing = authHeaders.authorization;
+        if (existing && /^MediaBrowser\s+Token\s*=/i.test(existing)) return existing;
+
+        const legacy = authHeaders['x-emby-authorization'] || '';
+        const legacyMatch = legacy.match(/(?:^|[,\s])Token\s*=\s*"([^"]+)"/i);
+        const sessionToken = token() || (legacyMatch && legacyMatch[1])
+            || authHeaders['x-emby-token'] || authHeaders['x-mediabrowser-token'];
+
+        // Session tokens never need quotes, whitespace or control characters.
+        if (typeof sessionToken !== 'string'
+            || !/^[A-Za-z0-9._~-]{1,256}$/.test(sessionToken)) return null;
+        return 'MediaBrowser Token="' + sessionToken + '"';
+    }
+
     async function request(path, method, body) {
-        const headers = { Accept: 'application/json' };
-        for (const [name, value] of Object.entries(authHeaders)) headers[name] = value;
-        if (!Object.keys(authHeaders).length) {
-            const auth = token();
-            if (auth) headers['X-Emby-Token'] = auth;
+        const authorization = modernAuthorization();
+        if (!authorization) {
+            const error = new Error('Kein Jellyfin-Anmeldetoken verfügbar. Bitte erneut anmelden.');
+            error.status = 401;
+            throw error;
         }
+        const headers = { Accept: 'application/json', Authorization: authorization };
         if (body !== undefined) headers['Content-Type'] = 'application/json';
         const response = await nativeFetch.call(root, new URL(path, apiRoot).toString(), {
             method, headers, credentials: 'same-origin', body: body === undefined ? undefined : JSON.stringify(body)

@@ -120,7 +120,8 @@ test('mounts a one-line input after editor-info XHR, even when form existed firs
     assert.equal(input.value, 'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
     assert.equal(input.disabled, false);
     const get = app.calls.find(x => x.url.includes('/TrailerEditor/Items/'));
-    assert.equal(get.opts.headers['X-Emby-Token'], 'test-token');
+    assert.equal(get.opts.headers.Authorization, 'MediaBrowser Token="test-token"');
+    assert.equal(get.opts.headers['X-Emby-Token'], undefined);
 });
 
 test('changes trailer by sending a single URL before native submit', async () => {
@@ -177,8 +178,8 @@ test('captures Jellyfin authorization header on XHR before plugin GET and PUT', 
     xhr.setRequestHeader('X-Emby-Authorization', 'MediaBrowser Client="Jellyfin Web", Token="secret"');
     await new Promise(resolve => setImmediate(resolve));
     const get = app.calls.find(x => x.opts.method === 'GET');
-    assert.equal(get.opts.headers['x-emby-authorization'],
-        'MediaBrowser Client="Jellyfin Web", Token="secret"');
+    assert.equal(get.opts.headers.Authorization, 'MediaBrowser Token="test-token"');
+    assert.equal(get.opts.headers['x-emby-authorization'], undefined);
     assert.equal(get.opts.headers['X-Emby-Token'], undefined);
 
     const input = app.getInput();
@@ -188,8 +189,8 @@ test('captures Jellyfin authorization header on XHR before plugin GET and PUT', 
         preventDefault() {}, stopImmediatePropagation() {}
     });
     const put = app.calls.find(x => x.opts.method === 'PUT');
-    assert.equal(put.opts.headers['x-emby-authorization'],
-        'MediaBrowser Client="Jellyfin Web", Token="secret"');
+    assert.equal(put.opts.headers.Authorization, 'MediaBrowser Token="test-token"');
+    assert.equal(put.opts.headers['x-emby-authorization'], undefined);
 });
 
 test('unchanged first of multiple trailers preserves the complete trailer list', async () => {
