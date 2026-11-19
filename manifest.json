@@ -6,6 +6,23 @@
     "overview": "Adds a YouTube trailer field to the existing metadata dialog. Saves through Jellyfin's native metadata pipeline; NFO output requires the NFO saver.",
     "owner": "thomasasen",
     "category": "Metadata",
-    "versions": []
+    "versions": [
+      {
+        "version": "0.1.0.0",
+        "changelog": "Initial release: edit and persist YouTube trailer URLs in Jellyfin Web.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/thomasasen/jellyfintrailereditor/releases/download/v0.1.0/JellyfinTrailerEditor_10.11.zip",
+        "checksum": "d849d9c70eb2cb5d4f5a19a2b85c015c",
+        "timestamp": "2026-11-19T13:51:58Z"
+      },
+      {
+        "version": "0.1.0.12",
+        "changelog": "Initial release: edit and persist YouTube trailer URLs in Jellyfin Web.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/thomasasen/jellyfintrailereditor/releases/download/v0.1.0/JellyfinTrailerEditor_12.zip",
+        "checksum": "27f89641427a136a1290072f157a0daa",
+        "timestamp": "2026-11-19T13:51:58Z"
+      }
+    ]
   }
 ]
