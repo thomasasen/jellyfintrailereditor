@@ -25,6 +25,17 @@ public sealed class TrailerEditorController : ControllerBase
         _logger = logger;
     }
 
+    // Lightweight installation diagnostic. Does not expose item metadata or credentials.
+    [HttpGet("Status")]
+    [AllowAnonymous]
+    public IActionResult Status() => Ok(new
+    {
+        plugin = "Trailer Editor",
+        version = typeof(TrailerEditorController).Assembly.GetName().Version?.ToString(),
+        loaded = true,
+        editor = "Jellyfin Web"
+    });
+
     [HttpGet("ClientScript")]
     [AllowAnonymous]
     [Produces("application/javascript")]

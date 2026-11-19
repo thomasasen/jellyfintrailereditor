@@ -68,7 +68,7 @@ public sealed class IndexHtmlInjectionFilter : IStartupFilter
             const string snippet = "\n    " + Marker +
                 "\n    <script src=\"../TrailerEditor/ClientScript\" defer></script>\n</body>";
             html = html.Replace("</body>", snippet, StringComparison.OrdinalIgnoreCase);
-            _logger.LogDebug("Injected Trailer Editor into Jellyfin Web response");
+            _logger.LogInformation("Trailer Editor: browser script reference injected into /web/index.html");
         }
 
         context.Response.Headers.Remove("Content-Length");

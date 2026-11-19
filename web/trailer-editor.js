@@ -51,11 +51,22 @@
     const mounted = new WeakSet();
     let lastEditorId = null;
 
+    // The editor's XHR often starts *after* its form has already been inserted.
+    // Updating lastEditorId without rescanning leaves the field permanently missing.
+    function scheduleScan() {
+        scan();
+        if (typeof root.requestAnimationFrame === 'function') root.requestAnimationFrame(scan);
+        else root.setTimeout(scan, 0);
+    }
+
     // Jellyfin's metadata editor keeps currentItem private to its JS module. Capture
     // the editor-info request, falling back to the item ID in the page URL.
     function inspectRequest(url) {
         const match = String(url).match(/\/Items\/([0-9a-f-]{32,36})\/MetadataEditor(?:[?#]|$)/i);
-        if (match && GUID.test(match[1])) lastEditorId = match[1];
+        if (match && GUID.test(match[1])) {
+            lastEditorId = match[1];
+            scheduleScan();
+        }
     }
 
     const nativeFetch = root.fetch;
@@ -99,7 +110,9 @@
                 const data = await response.json();
                 problem = data.message || data.detail || data.title || '';
             } catch (_) { /* no JSON response */ }
-            throw new Error(problem || 'HTTP ' + response.status);
+            const error = new Error(problem || 'HTTP ' + response.status);
+            error.status = response.status;
+            throw error;
         }
         return response.json();
     }
@@ -111,10 +124,12 @@
 
     async function mount(form, itemId) {
         if (mounted.has(form)) return;
+        const footer = form.querySelector('.formDialogFooter');
+        const sortName = form.querySelector('#txtSortName');
+        const anchor = sortName && sortName.closest('.inputContainer');
+        if (!footer && !anchor) return;
         mounted.add(form);
 
-        const footer = form.querySelector('.formDialogFooter');
-        if (!footer) return;
         const field = document.createElement('div');
         field.className = 'inputContainer jte-field';
         field.style.marginBottom = '1.5em';
@@ -123,37 +138,45 @@
         label.className = 'inputLabel inputLabelUnfocused';
         label.htmlFor = 'jteTrailers';
         label.textContent = 'YouTube-Trailer';
-        const textarea = document.createElement('textarea');
-        textarea.id = 'jteTrailers';
-        textarea.className = 'emby-input';
-        textarea.rows = 3;
-        textarea.disabled = true;
-        textarea.placeholder = 'https://www.youtube.com/watch?v=...';
-        textarea.style.width = '100%';
-        textarea.style.boxSizing = 'border-box';
-        textarea.style.resize = 'vertical';
+        const input = document.createElement('input');
+        input.type = 'url';
+        input.id = 'jteTrailers';
+        input.className = 'emby-input';
+        input.autocomplete = 'off';
+        input.disabled = true;
+        input.placeholder = 'https://www.youtube.com/watch?v=...';
+        input.style.width = '100%';
+        input.style.boxSizing = 'border-box';
 
         const help = document.createElement('div');
         help.className = 'fieldDescription';
-        help.textContent = 'Eine YouTube-URL pro Zeile. Leeren, um YouTube-Trailer zu entfernen. Andere Trailer bleiben erhalten.';
+        help.textContent = 'Ein Trailer-Link pro Film. Leer lassen, um YouTube-Trailer zu entfernen.';
         const status = document.createElement('div');
         status.className = 'fieldDescription';
         status.setAttribute('role', 'status');
         status.setAttribute('aria-live', 'polite');
-        field.append(label, textarea, help, status);
-        footer.before(field);
+        field.append(label, input, help, status);
+        if (anchor) anchor.after(field);
+        else footer.before(field);
 
         let original = [];
         let ready = false;
         try {
             const response = await request('Items/' + itemId, 'GET');
             original = response.urls || response.Urls || [];
-            textarea.value = original.join('\n');
-            textarea.disabled = false;
+            input.value = original[0] || '';
+            input.disabled = false;
             ready = true;
-            message(status, original.length + ' Trailer geladen', false);
+            message(status, original.length > 1
+                ? 'Mehrere vorhandene Trailer: Beim Ändern wird nur der angezeigte übernommen.'
+                : 'Trailer-Feld bereit', false);
         } catch (error) {
-            message(status, 'Trailer konnten nicht geladen werden: ' + error.message, true);
+            if (error.status === 404) {
+                // Movie-only feature: never show the editor field for Series/Episodes.
+                field.remove();
+            } else {
+                message(status, 'Trailer konnten nicht geladen werden: ' + error.message, true);
+            }
         }
 
         // Runs BEFORE Jellyfin's native onSubmit. Save trailers first and only
@@ -169,12 +192,15 @@
             if (!ready) return;
             let proposed;
             try {
-                proposed = parseList(textarea.value);
+                const raw = input.value.trim();
+                const canonical = raw ? canonicalYouTube(raw) : null;
+                if (raw && !canonical) throw new Error('Bitte eine gültige YouTube-Trailer-URL eingeben.');
+                proposed = canonical ? [canonical] : [];
             } catch (error) {
                 event.preventDefault();
                 event.stopImmediatePropagation();
                 message(status, error.message, true);
-                textarea.focus();
+                input.focus();
                 return;
             }
             if (JSON.stringify(proposed) === JSON.stringify(original)) return;
@@ -183,7 +209,7 @@
             event.stopImmediatePropagation();
             if (busy) return;
             busy = true;
-            textarea.disabled = true;
+            input.disabled = true;
             message(status, 'Trailer werden gespeichert …', false);
             try {
                 await request('Items/' + itemId, 'PUT', { urls: proposed });
@@ -195,7 +221,7 @@
                 message(status, 'Speichern fehlgeschlagen: ' + error.message, true);
             } finally {
                 busy = false;
-                textarea.disabled = false;
+                input.disabled = false;
             }
         }, true);
     }
@@ -209,5 +235,7 @@
     }
     const observer = new MutationObserver(scan);
     observer.observe(document.documentElement, { childList: true, subtree: true });
-    scan();
+    root.addEventListener('hashchange', scheduleScan);
+    root.addEventListener('popstate', scheduleScan);
+    scheduleScan();
 })(globalThis);

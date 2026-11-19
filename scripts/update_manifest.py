@@ -8,12 +8,12 @@ import sys
 
 root = pathlib.Path(__file__).resolve().parents[1]
 assets = pathlib.Path(sys.argv[1])
-release = "https://github.com/thomasasen/jellyfintrailereditor/releases/download/v0.1.0"
+release = "https://github.com/thomasasen/jellyfintrailereditor/releases/download/v0.1.1"
 now = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 versions = []
 for suffix, number, abi in [
-    ("10.11", "0.1.0.0", "10.11.0.0"),
-    ("12", "0.1.0.12", "12.0.0.0"),
+    ("10.11", "0.1.1.0", "10.11.0.0"),
+    ("12", "0.1.1.12", "12.0.0.0"),
 ]:
     name = f"JellyfinTrailerEditor_{suffix}.zip"
     data = (assets / name).read_bytes()
