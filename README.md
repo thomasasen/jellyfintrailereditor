@@ -1,5 +1,7 @@
 # Jellyfin Trailer Editor
 
+![Trailer Editor plugin logo](assets/trailer-editor.png)
+
 A Jellyfin server plugin that adds a **single-line YouTube trailer URL** field to the **existing movie metadata editor** in Jellyfin Web. Enter or remove a trailer URL, then click Jellyfin's normal **Save** button. No separate editor, database, sidecar script, web-root write or additional injector plugin is required.
 
 **Supported targets:** Jellyfin Server **10.11.x** (.NET 9) and **12.x** (.NET 10), with separate plugin packages. Both builds are produced by CI. Web integration is intended for **Jellyfin Web served by your Jellyfin server** (including clients that actually embed it); native third-party clients are not modified.
@@ -29,13 +31,13 @@ A Jellyfin server plugin that adds a **single-line YouTube trailer URL** field t
 Requires the corresponding .NET SDK (9 for Jellyfin 10.11, 10 for Jellyfin 12). For Jellyfin 10.11:
 
 ```bash
-dotnet publish src/Jellyfin.Plugin.TrailerEditor.csproj -c Release -p:TargetJellyfin=10.11 -p:Version=0.1.3.0 -o dist/10.11
+dotnet publish src/Jellyfin.Plugin.TrailerEditor.csproj -c Release -p:TargetJellyfin=10.11 -p:Version=0.1.4.0 -o dist/10.11
 ```
 
 For Jellyfin 12:
 
 ```bash
-dotnet publish src/Jellyfin.Plugin.TrailerEditor.csproj -c Release -p:TargetJellyfin=12 -p:Version=0.1.3.12 -o dist/12
+dotnet publish src/Jellyfin.Plugin.TrailerEditor.csproj -c Release -p:TargetJellyfin=12 -p:Version=0.1.4.12 -o dist/12
 ```
 
 Stop Jellyfin, create a folder under its plugin directory, copy **only** `Jellyfin.Plugin.TrailerEditor.dll` from the matching build into it, then restart Jellyfin. Common Linux path: `/var/lib/jellyfin/plugins/TrailerEditor_0.1.0/`. Docker installations typically use `/config/plugins/` within the container's configured data volume. **Do not install the .NET 9 assembly on Jellyfin 12, or vice versa.**
@@ -86,11 +88,11 @@ node --check web/trailer-editor.js
 node --test tests/trailer-editor.test.cjs
 ```
 
-GitHub Actions builds both DLL targets and creates ZIP artifacts. On main pushes it creates the `v0.1.3` release, uploads the two ZIPs, computes MD5 checksums for Jellyfin's plugin catalog and updates `manifest.json`. Release creation depends on GitHub Actions having **Contents: write** permission.
+GitHub Actions builds both DLL targets and creates ZIP artifacts. On main pushes it creates the `v0.1.4` release, uploads the two ZIPs, computes MD5 checksums for Jellyfin's plugin catalog and updates `manifest.json`. Release creation depends on GitHub Actions having **Contents: write** permission.
 
 ## Quick check: is the browser integration loaded?\n\n1. In a browser, open `https://YOUR-JELLYFIN-SERVER/TrailerEditor/Status` (include your Jellyfin Base URL if configured). You should get JSON with `loaded: true`. That verifies the server plugin is installed, **not** the browser integration.\n2. Open `/web/index.html` and use **View source**. It should include `<!-- Jellyfin Trailer Editor -->` and `../TrailerEditor/ClientScript`.\n3. Open `/TrailerEditor/ClientScript`. JavaScript should be returned, not a 404.\n4. Hard refresh Jellyfin Web with **Ctrl+Shift+R**. Then open a movie's **Edit metadata** and look immediately after **Sort title**.\n\nIf the plugin status works but the script tag is absent from the HTML response, your Jellyfin Web may be hosted separately or a reverse proxy may be serving a cached `index.html`. In this case the plugin cannot automatically change the separately hosted web frontend; use the frontend hosted by Jellyfin Server, or configure the frontend to include the script.\n\n## Authentication and editing diagnostics
 
-If the Trailer Editor URL field appears but cannot be used, update to **0.1.3** or later, then restart Jellyfin and hard refresh Jellyfin Web. Unlike earlier versions, the input remains editable even if reading existing trailer metadata fails. Any GET error is displayed immediately below the field. Jellyfin Web may use a non-global API client; this version captures the authentication header from Jellyfin's own metadata-editor request so that the trailer API can authenticate without asking for credentials.
+If the Trailer Editor URL field appears but cannot be used, update to **0.1.4** or later, then restart Jellyfin and hard refresh Jellyfin Web. Unlike earlier versions, the input remains editable even if reading existing trailer metadata fails. Any GET error is displayed immediately below the field. Jellyfin Web may use a non-global API client; this version captures the authentication header from Jellyfin's own metadata-editor request so that the trailer API can authenticate without asking for credentials.
 
 A trailer is only written if the value has changed. If loading existing trailers fails and the field is left untouched, the native metadata editor can still save without inadvertently deleting trailer links. An explicit new URL triggers a write attempt and errors are displayed without closing the dialog. Browser developers can inspect GET/PUT failures in the Network tab; do not copy access tokens into public issues.
 
@@ -108,6 +110,12 @@ A trailer is only written if the value has changed. If loading existing trailers
 
 License: [MIT](LICENSE).
 
-## Authentication compatibility (0.1.3)
+## Authentication compatibility (0.1.4)
 
-Jellyfin 10.11 allows disabling legacy authentication and Jellyfin 12 disables it by default. Versions up to 0.1.2 sent obsolete `X-Emby-Token` or `X-Emby-Authorization` headers, which can cause HTTP 401 even for an administrator. Version 0.1.3 sends the supported `Authorization: MediaBrowser Token="..."` scheme on trailer GET and PUT requests. It uses the current Jellyfin Web session and requires no new API key or reduction of Jellyfin security settings. A failed token lookup results in a clear error rather than an anonymous network request.
+Jellyfin 10.11 allows disabling legacy authentication and Jellyfin 12 disables it by default. Versions up to 0.1.2 sent obsolete `X-Emby-Token` or `X-Emby-Authorization` headers, which can cause HTTP 401 even for an administrator. Version 0.1.4 sends the supported `Authorization: MediaBrowser Token="..."` scheme on trailer GET and PUT requests. It uses the current Jellyfin Web session and requires no new API key or reduction of Jellyfin security settings. A failed token lookup results in a clear error rather than an anonymous network request.
+
+## Plugin icon
+
+The official plugin icon is stored at [`assets/trailer-editor.png`](assets/trailer-editor.png), a 128 × 128 PNG derived from the approved artwork. It is referenced by the catalog's `imageUrl`, and bundled in both release ZIP packages. Each package also includes a matching `meta.json` with `imagePath: "trailer-editor.png"`, so the image is served through Jellyfin's native installed-plugin image endpoint. The versioned package metadata is generated in CI.
+
+To update an existing installation so that the icon appears in **Dashboard → Plugins → My Plugins**, install **0.1.4** (10.11 build: `0.1.4.0`; 12 build: `0.1.4.12`) and restart Jellyfin. The catalog image may refresh before the installed-plugin image is updated.
