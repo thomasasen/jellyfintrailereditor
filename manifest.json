@@ -8,20 +8,20 @@
     "category": "Metadata",
     "versions": [
       {
-        "version": "0.1.3.0",
-        "changelog": "Fix HTTP 401 using modern MediaBrowser authentication.",
+        "version": "0.1.4.0",
+        "changelog": "Adds Trailer Editor logo to catalog and installed-plugin views.",
         "targetAbi": "10.11.0.0",
-        "sourceUrl": "https://github.com/thomasasen/jellyfintrailereditor/releases/download/v0.1.3/JellyfinTrailerEditor_10.11.zip",
-        "checksum": "aadb60f470c41cec9916a0046e2e5679",
-        "timestamp": "2026-11-19T14:45:20Z"
+        "sourceUrl": "https://github.com/thomasasen/jellyfintrailereditor/releases/download/v0.1.4/JellyfinTrailerEditor_10.11.zip",
+        "checksum": "932f87cd870db181759c2f7f635091ce",
+        "timestamp": "2026-11-19T15:33:56Z"
       },
       {
-        "version": "0.1.3.12",
-        "changelog": "Fix HTTP 401 using modern MediaBrowser authentication.",
+        "version": "0.1.4.12",
+        "changelog": "Adds Trailer Editor logo to catalog and installed-plugin views.",
         "targetAbi": "12.0.0.0",
-        "sourceUrl": "https://github.com/thomasasen/jellyfintrailereditor/releases/download/v0.1.3/JellyfinTrailerEditor_12.zip",
-        "checksum": "45eaa1e05f1803dc25d1aae1462975d7",
-        "timestamp": "2026-11-19T14:45:20Z"
+        "sourceUrl": "https://github.com/thomasasen/jellyfintrailereditor/releases/download/v0.1.4/JellyfinTrailerEditor_12.zip",
+        "checksum": "0a5b52713c98bb5bbe5cbc3e9182298d",
+        "timestamp": "2026-11-19T15:33:56Z"
       }
     ],
     "imageUrl": "https://raw.githubusercontent.com/thomasasen/jellyfintrailereditor/main/assets/trailer-editor.png"
