@@ -54,34 +54,77 @@
     // The editor's XHR often starts *after* its form has already been inserted.
     // Updating lastEditorId without rescanning leaves the field permanently missing.
     function scheduleScan() {
-        scan();
+        // Wait for XMLHttpRequest.setRequestHeader(), which usually follows open()
+        // synchronously. An immediate scan would send the plugin GET without auth.
+        Promise.resolve().then(scan);
         if (typeof root.requestAnimationFrame === 'function') root.requestAnimationFrame(scan);
         else root.setTimeout(scan, 0);
     }
 
-    // Jellyfin's metadata editor keeps currentItem private to its JS module. Capture
-    // the editor-info request, falling back to the item ID in the page URL.
-    function inspectRequest(url) {
-        const match = String(url).match(/\/Items\/([0-9a-f-]{32,36})\/MetadataEditor(?:[?#]|$)/i);
-        if (match && GUID.test(match[1])) {
-            lastEditorId = match[1];
-            scheduleScan();
+    // Capture only authentication already attached to Jellyfin's own *same-origin*
+    // metadata-editor request. The client may not expose its ApiClient globally.
+    // Never log, store persistently or return these values to the page.
+    const authHeaders = Object.create(null);
+    const authHeaderNames = new Set([
+        'authorization', 'x-emby-authorization', 'x-emby-token', 'x-mediabrowser-token'
+    ]);
+    const metadataRequests = new WeakSet();
+
+    function captureHeader(name, value) {
+        const lower = String(name).toLowerCase();
+        if (authHeaderNames.has(lower) && typeof value === 'string' && value) {
+            authHeaders[lower] = value;
         }
+    }
+
+    function captureHeaders(headers) {
+        if (!headers) return;
+        if (typeof headers.forEach === 'function') {
+            headers.forEach((value, key) => captureHeader(key, value));
+        } else if (Array.isArray(headers)) {
+            for (const pair of headers) if (Array.isArray(pair)) captureHeader(pair[0], pair[1]);
+        } else if (typeof headers === 'object') {
+            for (const [key, value] of Object.entries(headers)) captureHeader(key, value);
+        }
+    }
+
+    // Jellyfin's metadata editor keeps currentItem private to its JS module.
+    function inspectRequest(url, headers) {
+        const match = String(url).match(/\/Items\/([0-9a-f-]{32,36})\/MetadataEditor(?:[?#]|$)/i);
+        if (!match || !GUID.test(match[1])) return false;
+        let absolute;
+        try { absolute = new URL(String(url), root.location.href); }
+        catch (_) { return false; }
+        if (absolute.origin !== apiRoot.origin) return false;
+        captureHeaders(headers);
+        lastEditorId = match[1];
+        scheduleScan();
+        return true;
     }
 
     const nativeFetch = root.fetch;
     if (typeof nativeFetch === 'function') {
         root.fetch = function (input, init) {
-            inspectRequest(typeof input === 'string' ? input : input && input.url);
+            const url = typeof input === 'string' ? input : input && input.url;
+            const headers = init && init.headers || input && input.headers;
+            inspectRequest(url, headers);
             return nativeFetch.apply(this, arguments);
         };
     }
     if (root.XMLHttpRequest && root.XMLHttpRequest.prototype) {
         const nativeOpen = root.XMLHttpRequest.prototype.open;
+        const nativeSetHeader = root.XMLHttpRequest.prototype.setRequestHeader;
         root.XMLHttpRequest.prototype.open = function (method, url) {
-            inspectRequest(url);
+            if (inspectRequest(url)) metadataRequests.add(this);
+            else metadataRequests.delete(this);
             return nativeOpen.apply(this, arguments);
         };
+        if (typeof nativeSetHeader === 'function') {
+            root.XMLHttpRequest.prototype.setRequestHeader = function (name, value) {
+                if (metadataRequests.has(this)) captureHeader(name, value);
+                return nativeSetHeader.apply(this, arguments);
+            };
+        }
     }
 
     function routeId() {
@@ -97,9 +140,12 @@
     }
 
     async function request(path, method, body) {
-        const auth = token();
         const headers = { Accept: 'application/json' };
-        if (auth) headers['X-Emby-Token'] = auth;
+        for (const [name, value] of Object.entries(authHeaders)) headers[name] = value;
+        if (!Object.keys(authHeaders).length) {
+            const auth = token();
+            if (auth) headers['X-Emby-Token'] = auth;
+        }
         if (body !== undefined) headers['Content-Type'] = 'application/json';
         const response = await nativeFetch.call(root, new URL(path, apiRoot).toString(), {
             method, headers, credentials: 'same-origin', body: body === undefined ? undefined : JSON.stringify(body)
@@ -143,7 +189,8 @@
         input.id = 'jteTrailers';
         input.className = 'emby-input';
         input.autocomplete = 'off';
-        input.disabled = true;
+        // Always editable, even when the first metadata GET fails.
+        input.disabled = false;
         input.placeholder = 'https://www.youtube.com/watch?v=...';
         input.style.width = '100%';
         input.style.boxSizing = 'border-box';
@@ -160,13 +207,14 @@
         else footer.before(field);
 
         let original = [];
-        let ready = false;
+        let loaded = false;
+        let dirty = false;
+        input.addEventListener('input', () => { dirty = true; });
         try {
             const response = await request('Items/' + itemId, 'GET');
             original = response.urls || response.Urls || [];
-            input.value = original[0] || '';
-            input.disabled = false;
-            ready = true;
+            if (!dirty) input.value = original[0] || '';
+            loaded = true;
             message(status, original.length > 1
                 ? 'Mehrere vorhandene Trailer: Beim Ändern wird nur der angezeigte übernommen.'
                 : 'Trailer-Feld bereit', false);
@@ -175,7 +223,10 @@
                 // Movie-only feature: never show the editor field for Series/Episodes.
                 field.remove();
             } else {
-                message(status, 'Trailer konnten nicht geladen werden: ' + error.message, true);
+                // Keep the field editable. If the user explicitly changes it,
+                // retrying the write is safe; a failed GET must not silently lose edits.
+                message(status, 'Vorhandener Trailer konnte nicht geladen werden ('
+                    + error.message + '). Eingabe möglich; Speichern wird erneut versucht.', true);
             }
         }
 
@@ -189,7 +240,8 @@
                 passThrough = false;
                 return;
             }
-            if (!ready) return;
+            // A failed GET is not permission to clear unknown existing trailers.
+            if (!loaded && !dirty) return;
             let proposed;
             try {
                 const raw = input.value.trim();
@@ -203,7 +255,10 @@
                 input.focus();
                 return;
             }
-            if (JSON.stringify(proposed) === JSON.stringify(original)) return;
+            // With multiple saved trailers the single-line control displays only
+            // the first one; an unchanged field must not delete the others.
+            if (!dirty || (loaded && proposed[0] === original[0] &&
+                proposed.length === (original.length ? 1 : 0))) return;
 
             event.preventDefault();
             event.stopImmediatePropagation();
@@ -214,6 +269,8 @@
             try {
                 await request('Items/' + itemId, 'PUT', { urls: proposed });
                 original = proposed;
+                loaded = true;
+                dirty = false;
                 message(status, 'Trailer gespeichert', false);
                 passThrough = true;
                 form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));

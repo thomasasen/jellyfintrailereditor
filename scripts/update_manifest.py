@@ -8,18 +8,18 @@ import sys
 
 root = pathlib.Path(__file__).resolve().parents[1]
 assets = pathlib.Path(sys.argv[1])
-release = "https://github.com/thomasasen/jellyfintrailereditor/releases/download/v0.1.1"
+release = "https://github.com/thomasasen/jellyfintrailereditor/releases/download/v0.1.2"
 now = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 versions = []
 for suffix, number, abi in [
-    ("10.11", "0.1.1.0", "10.11.0.0"),
-    ("12", "0.1.1.12", "12.0.0.0"),
+    ("10.11", "0.1.2.0", "10.11.0.0"),
+    ("12", "0.1.2.12", "12.0.0.0"),
 ]:
     name = f"JellyfinTrailerEditor_{suffix}.zip"
     data = (assets / name).read_bytes()
     versions.append({
         "version": number,
-        "changelog": "Initial release: edit and persist YouTube trailer URLs in Jellyfin Web.",
+        "changelog": "Fix editable trailer field and reuse Jellyfin authentication headers.",
         "targetAbi": abi,
         "sourceUrl": f"{release}/{name}",
         "checksum": hashlib.md5(data).hexdigest(),

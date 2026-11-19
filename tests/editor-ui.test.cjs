@@ -7,7 +7,7 @@ const vm = require('node:vm');
 const code = fs.readFileSync(path.join(__dirname, '..', 'web', 'trailer-editor.js'), 'utf8');
 const movieId = 'ee5f250e-ae5e-4bca-903e-8c22cf9c8aa8';
 
-function harness(movieOnly = true) {
+function harness(movieOnly = true, options = {}) {
     let field = null;
     let formSubmitted = 0;
     let nativeSubmit = 0;
@@ -37,6 +37,8 @@ function harness(movieOnly = true) {
             children: [],
             append(...children) { this.children.push(...children); },
             setAttribute() {},
+            addEventListener(type, listener) { (this.listeners ||= {})[type] = listener; },
+            fire(type) { if (this.listeners?.[type]) this.listeners[type](); },
             remove() { if (field === this) field = null; },
             focus() {},
         };
@@ -54,6 +56,9 @@ function harness(movieOnly = true) {
         calls.push({ url: String(url), opts });
         const itemEndpoint = String(url).includes('/TrailerEditor/Items/' + movieId);
         if (itemEndpoint && !movieOnly) return { ok: false, status: 404, json: async () => ({}) };
+        if (itemEndpoint && opts.method === 'GET' && options.getStatus) {
+            return { ok: false, status: options.getStatus, json: async () => ({}) };
+        }
         return {
             ok: true,
             status: 200,
@@ -64,6 +69,7 @@ function harness(movieOnly = true) {
     };
     class XMLHttpRequest {
         open() { return undefined; }
+        setRequestHeader() { return undefined; }
     }
     class MutationObserver {
         observe() {}
@@ -122,6 +128,7 @@ test('changes trailer by sending a single URL before native submit', async () =>
     await new Promise(resolve => setImmediate(resolve));
     const input = app.getInput();
     input.value = 'https://youtu.be/9bZkp7q19f0';
+    input.fire('input');
     const listener = app.getListeners().find(x => x.capture).callback;
     const event = {
         preventDefault() { this.prevented = true; },
@@ -143,4 +150,55 @@ test('hides the field on unsupported content (HTTP 404)', async () => {
     new app.env.XMLHttpRequest().open('GET', '/Items/' + movieId + '/MetadataEditor');
     await new Promise(resolve => setImmediate(resolve));
     assert.equal(app.getField(), null);
+});
+
+test('input stays editable if loading existing trailers fails with HTTP 401', async () => {
+    const app = harness(true, { getStatus: 401 });
+    const xhr = new app.env.XMLHttpRequest();
+    xhr.open('GET', '/Items/' + movieId + '/MetadataEditor');
+    await new Promise(resolve => setImmediate(resolve));
+    const input = app.getInput();
+    assert.ok(input);
+    assert.equal(input.disabled, false);
+    const errorLabel = app.getField().children.find(child => child.tagName === 'DIV' && child.textContent?.includes('401'));
+    assert.ok(errorLabel, 'must show a useful message instead of silently disabling the field');
+
+    // With no user change, never overwrite unknown trailers.
+    const listener = app.getListeners().find(x => x.capture).callback;
+    await listener({ preventDefault() {}, stopImmediatePropagation() {} });
+    assert.equal(app.calls.filter(x => x.opts.method === 'PUT').length, 0);
+});
+
+test('captures Jellyfin authorization header on XHR before plugin GET and PUT', async () => {
+    const app = harness();
+    const xhr = new app.env.XMLHttpRequest();
+    xhr.open('GET', '/Items/' + movieId + '/MetadataEditor');
+    xhr.setRequestHeader('X-Emby-Authorization', 'MediaBrowser Client="Jellyfin Web", Token="secret"');
+    await new Promise(resolve => setImmediate(resolve));
+    const get = app.calls.find(x => x.opts.method === 'GET');
+    assert.equal(get.opts.headers['x-emby-authorization'],
+        'MediaBrowser Client="Jellyfin Web", Token="secret"');
+    assert.equal(get.opts.headers['X-Emby-Token'], undefined);
+
+    const input = app.getInput();
+    input.value = 'https://youtu.be/9bZkp7q19f0';
+    input.fire('input');
+    await app.getListeners().find(x => x.capture).callback({
+        preventDefault() {}, stopImmediatePropagation() {}
+    });
+    const put = app.calls.find(x => x.opts.method === 'PUT');
+    assert.equal(put.opts.headers['x-emby-authorization'],
+        'MediaBrowser Client="Jellyfin Web", Token="secret"');
+});
+
+test('unchanged first of multiple trailers preserves the complete trailer list', async () => {
+    const app = harness();
+    const xhr = new app.env.XMLHttpRequest();
+    xhr.open('GET', '/Items/' + movieId + '/MetadataEditor');
+    await new Promise(resolve => setImmediate(resolve));
+    const input = app.getInput();
+    assert.equal(input.disabled, false);
+    const listener = app.getListeners().find(x => x.capture).callback;
+    await listener({ preventDefault() {}, stopImmediatePropagation() {} });
+    assert.equal(app.calls.filter(x => x.opts.method === 'PUT').length, 0);
 });
