@@ -142,12 +142,13 @@
     // Jellyfin 10.11+ can disable the obsolete X-Emby-* authentication headers.
     // Jellyfin 12 does this by default. Use Authorization: MediaBrowser instead.
     function modernAuthorization() {
-        const existing = authHeaders.authorization;
-        if (existing && /^MediaBrowser\s+Token\s*=/i.test(existing)) return existing;
-
+        const existing = authHeaders.authorization || '';
+        const modernMatch = /^MediaBrowser\s/i.test(existing)
+            ? existing.match(/(?:^|[,\s])Token\s*=\s*"([^"]+)"/i) : null;
         const legacy = authHeaders['x-emby-authorization'] || '';
         const legacyMatch = legacy.match(/(?:^|[,\s])Token\s*=\s*"([^"]+)"/i);
-        const sessionToken = token() || (legacyMatch && legacyMatch[1])
+        const sessionToken = token() || (modernMatch && modernMatch[1])
+            || (legacyMatch && legacyMatch[1])
             || authHeaders['x-emby-token'] || authHeaders['x-mediabrowser-token'];
 
         // Session tokens never need quotes, whitespace or control characters.
