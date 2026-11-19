@@ -90,8 +90,8 @@ function harness(movieOnly = true, options = {}) {
         location: { href: 'http://jellyfin.local/web/#/dashboard' },
         ApiClient: { accessToken() { return 'test-token'; } },
         addEventListener() {},
-        requestAnimationFrame(callback) { callback(); },
-        setTimeout(callback) { callback(); },
+        requestAnimationFrame(callback) { setImmediate(callback); },
+        setTimeout(callback) { setImmediate(callback); },
         console
     };
     env.globalThis = env;
@@ -111,6 +111,7 @@ test('mounts a one-line input after editor-info XHR, even when form existed firs
     const app = harness();
     assert.equal(app.getField(), null, 'form existed at page start but item ID was unknown');
     new app.env.XMLHttpRequest().open('GET', '/Items/' + movieId + '/MetadataEditor');
+    await new Promise(resolve => setImmediate(resolve));
     assert.ok(app.getField(), 'the outgoing metadata-info request must rescan existing forms');
     const input = app.getInput();
     assert.ok(input, 'should render an input rather than a textarea');
